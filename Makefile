@@ -3,3 +3,6 @@ compile: db.c
 
 format: *.c
 	clang-format -style=Google -i *.c
+
+run:
+	./bin/db.exe
