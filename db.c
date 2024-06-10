@@ -13,7 +13,7 @@ typedef struct {
 
 // this method is used to create a pointer to the newly created input buffer
 InputBuffer *new_input_buffer() {
-  // creating a new pointer after 
+  // creating a new pointer after
   // allocating block of memory on the heap
   InputBuffer *input_buffer = (InputBuffer *)malloc(sizeof(InputBuffer));
 
@@ -56,6 +56,58 @@ void read_input(InputBuffer *input_buffer) {
   input_buffer->buffer[bytes_read - 1] = 0;
 }
 
+// defines types for meta command
+typedef enum {
+  META_COMMAND_SUCCESS,
+  META_COMMAND_UNRECOGNIZED_COMMAND
+} MetaCommandResult;
+
+// defines types for statement commands
+typedef enum { PREPARE_SUCCESS, PREPARE_UNRECOGNIZED_STATEMENT } PrepareResult;
+
+// defines types for statements, will grow over time
+typedef enum { STATEMENT_INSERT, STATEMENT_SELECT } StatementType;
+
+// creating a statement dict to keep track of types
+typedef struct {
+  StatementType type;
+} Statement;
+
+// this method is used to process meta commands
+MetaCommandResult do_meta_command(InputBuffer *input_buffer) {
+  if (strcmp(input_buffer->buffer, ".exit") == 0) {
+    exit(EXIT_SUCCESS);
+  } else {
+    return META_COMMAND_UNRECOGNIZED_COMMAND;
+  }
+}
+
+// this method is used to compare the input syntax and infer types
+PrepareResult prepare_statement(InputBuffer *input_buffer,
+                                Statement *statement) {
+  if (strncmp(input_buffer->buffer, "insert", 6) == 0) {
+    statement->type = STATEMENT_INSERT;
+    return PREPARE_SUCCESS;
+  }
+  if (strncmp(input_buffer->buffer, "select", 6) == 0) {
+    statement->type = STATEMENT_SELECT;
+    return PREPARE_SUCCESS;
+  }
+  return PREPARE_UNRECOGNIZED_STATEMENT
+}
+
+// we execute actual SQL statements here
+void execute_statement(Statement *statement) {
+  switch (statement->type) {
+    case STATEMENT_INSERT:
+      printf("insert operation.\n");
+      break;
+    case STATEMENT_SELECT:
+      printf("select operation.\n");
+      break;
+  }
+}
+
 // this method is the driver method
 int main(int argc, char *argv[]) {
   // we allocate an input buffer
@@ -67,13 +119,30 @@ int main(int argc, char *argv[]) {
     // we read the input
     read_input(input_buffer);
 
-    // we read and see if the buffer is equal to ".exit"
-    // if yes then we close and exit the REPL else we say the command was not supported
-    if (strcmp(input_buffer->buffer, ".exit") == 0) {
-      close_input_buffer(input_buffer);
-      exit(EXIT_SUCCESS);
-    } else {
-      printf("Unrecognized command '%s' .\n", input_buffer->buffer);
+    // we process meta commands in this section
+    if (input_buffer->buffer[0] == ".") {
+      switch (do_meta_command(input_buffer)) {
+        case META_COMMAND_SUCCESS:
+          continue;
+        case META_COMMAND_UNRECOGNIZED_COMMAND:
+          printf("Unrecognized command '%s' .\n", input_buffer->buffer);
+          continue;
+      }
     }
+
+    // we process actual SQL queries here
+    Statement statement;
+    switch (prepare_statement(input_buffer, &statement)) {
+      case PREPARE_SUCCESS:
+        break;
+      case PREPARE_UNRECOGNIZED_STATEMENT:
+        printf("Unrecognized keyword at start of '%s' .\n",
+               input_buffer->buffer);
+        continue;
+    }
+
+    // we execute actual queries in the future
+    execute_statement(&statement);
+    printf("Executed.\n");
   }
 }
