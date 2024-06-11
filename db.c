@@ -12,6 +12,7 @@ typedef struct {
   ssize_t input_length;
 } InputBuffer;
 
+// defines types for statement execution
 typedef enum { EXECUTE_SUCCESS, EXECUTE_TABLE_FULL } ExecuteResult;
 
 // defines types for meta command
@@ -50,7 +51,7 @@ typedef struct {
 // representation bits for calculating size
 #define size_of_attribute(Struct, Attribute) sizeof(((Struct *)0)->Attribute)
 
-// defining size and offsets of cells in rows
+// defining size and offsets of cells in row
 const uint32_t ID_SIZE = size_of_attribute(Row, id);
 const uint32_t USERNAME_SIZE = size_of_attribute(Row, username);
 const uint32_t EMAIL_SIZE = size_of_attribute(Row, email);
@@ -59,19 +60,19 @@ const uint32_t USERNAME_OFFSET = ID_OFFSET + ID_SIZE;
 const uint32_t EMAIL_OFFSET = USERNAME_OFFSET + USERNAME_SIZE;
 const uint32_t ROW_SIZE = ID_SIZE + USERNAME_SIZE + EMAIL_SIZE;
 
-// TODO: add notes
+// defining page and maximum pages for a table
 const uint32_t PAGE_SIZE = 4096;
 #define TABLE_MAX_PAGES 100
 const uint32_t ROWS_PER_PAGE = PAGE_SIZE / ROW_SIZE;
 const uint32_t TABLE_MAX_ROWS = ROWS_PER_PAGE * TABLE_MAX_PAGES;
 
-// TODO: add notes
+// currently we use array based paging
 typedef struct {
   uint32_t num_rows;
   void *pages[TABLE_MAX_PAGES];
 } Table;
 
-// TODO: add notes
+// utility to print row using select statement
 void print_row(Row *row) {
   printf("(%d, %s, %s)\n", row->id, row->username, row->email);
 }
@@ -90,7 +91,7 @@ void deserialize_row(void *source, Row *destination) {
   memcpy(&(destination->email), source + EMAIL_OFFSET, EMAIL_SIZE);
 }
 
-// TODO: add notes
+// this method is used to see row fits in which page of the table
 void *row_slot(Table *table, uint32_t row_num) {
   uint32_t page_num = row_num / ROWS_PER_PAGE;
   void *page = table->pages[page_num];
@@ -102,7 +103,7 @@ void *row_slot(Table *table, uint32_t row_num) {
   return page + byte_offset;
 }
 
-// TODO: add notes
+// this method is used to create an empty new table
 Table *new_table() {
   Table *table = (Table *)malloc(sizeof(Table));
   table->num_rows = 0;
@@ -114,12 +115,11 @@ Table *new_table() {
   return table;
 }
 
-// TODO: add notes
+// this method is used to free up the pages as well as the table
 void free_table(Table *table) {
   for (int i = 0; table->pages[i]; i++) {
     free(table->pages[i]);
   }
-
   free(table);
 }
 
@@ -199,7 +199,7 @@ PrepareResult prepare_statement(InputBuffer *input_buffer,
   return PREPARE_UNRECOGNIZED_STATEMENT;
 }
 
-// TODO: add notes
+// this method is used to insert rows into table
 ExecuteResult execute_insert(Statement *statement, Table *table) {
   if (table->num_rows >= TABLE_MAX_ROWS) {
     return EXECUTE_TABLE_FULL;
@@ -213,7 +213,7 @@ ExecuteResult execute_insert(Statement *statement, Table *table) {
   return EXECUTE_SUCCESS;
 }
 
-// TODO: add notes
+// this method is used to show all the rows in a table
 ExecuteResult execute_select(Statement *statement, Table *table) {
   Row row;
 
