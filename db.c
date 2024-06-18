@@ -97,6 +97,10 @@ void *row_slot(Table *table, uint32_t row_num) {
   void *page = table->pages[page_num];
   if (page == NULL) {
     page = table->pages[page_num] = malloc(PAGE_SIZE);
+    if (page == NULL) {
+      printf("Memory allocation failed.\n");
+      exit(EXIT_FAILURE);
+    }
   }
   uint32_t row_offset = row_num % ROWS_PER_PAGE;
   uint32_t byte_offset = row_offset * ROW_SIZE;
@@ -117,8 +121,10 @@ Table *new_table() {
 
 // this method is used to free up the pages as well as the table
 void free_table(Table *table) {
-  for (int i = 0; table->pages[i]; i++) {
-    free(table->pages[i]);
+  for (int i = 0; i < TABLE_MAX_PAGES; i++) {
+    if (table->pages[i] != NULL) {
+      free(table->pages[i]);
+    }
   }
   free(table);
 }
@@ -129,7 +135,7 @@ InputBuffer *new_input_buffer() {
   // allocating block of memory on the heap
   InputBuffer *input_buffer = (InputBuffer *)malloc(sizeof(InputBuffer));
 
-  // initializaing to default values
+  // initializing to default values
   input_buffer->buffer = NULL;
   input_buffer->buffer_length = 0;
   input_buffer->input_length = 0;
@@ -253,7 +259,7 @@ int main(int argc, char *argv[]) {
         case META_COMMAND_SUCCESS:
           continue;
         case META_COMMAND_UNRECOGNIZED_COMMAND:
-          printf("Unrecognized command '%s' .\n", input_buffer->buffer);
+          printf("Unrecognized command '%s'.\n", input_buffer->buffer);
           continue;
       }
     }
@@ -267,7 +273,7 @@ int main(int argc, char *argv[]) {
         printf("Syntax error. Could not parse statement.\n");
         continue;
       case PREPARE_UNRECOGNIZED_STATEMENT:
-        printf("Unrecognized keyword at start of '%s' .\n",
+        printf("Unrecognized keyword at start of '%s'.\n",
                input_buffer->buffer);
         continue;
     }

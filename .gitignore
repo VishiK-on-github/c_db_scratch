@@ -1,2 +1,4 @@
 # do not track
 *.exe
+bin/
+db
