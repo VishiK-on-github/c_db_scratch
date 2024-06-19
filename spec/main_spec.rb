@@ -38,4 +38,39 @@ describe 'database' do
         expect(result[-2]).to eq('db > Error: Table full.')
     end
 
+    it 'prints error if the string is too long' do
+        long_username = "a"*33
+        long_email = "a"*256
+
+        script = [
+            "insert 1 #{long_username} #{long_email}",
+            "select",
+            ".exit"
+        ]
+
+        result = run_script(script)
+
+        expect(result).to match_array([
+            "db > String is too long.",
+            "db > Executed.",
+            "db > "
+        ])
+    end
+
+    it 'prints an error if id is negative' do
+        script = [
+            "insert -1 hi byee",
+            "select",
+            ".exit"
+        ]
+
+        result = run_script(script)
+
+        expect(result).to match_array([
+            "db > ID must be positive.",
+            "db > Executed.",
+            "db > "
+        ])
+    end
+
 end
