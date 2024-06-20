@@ -1,7 +1,11 @@
 describe 'database' do
+    before do
+        `rm -rf test.db`
+    end
+
     def run_script(commands)
         raw_output = nil
-        IO.popen("./bin/db", "r+") do |pipe|
+        IO.popen("./bin/db test.db", "r+") do |pipe|
             commands.each do |command|
                 pipe.puts command
             end
@@ -26,6 +30,29 @@ describe 'database' do
             "db > (1, user1, abcd@vishu.com)",
             "Executed.",
             "db > ",
+        ])
+    end
+
+    it 'persistence checking after closing connection' do
+        res1 = run_script([
+            "insert 1 user1 user1@user.com",
+            ".exit"
+        ])
+
+        expect(res1).to match_array([
+            "db > Executed.",
+            "db > "
+        ])
+
+        res2 = run_script([
+            "select",
+            ".exit"
+        ])
+
+        expect(res2).to match_array([
+            "db > (1, user1, user1@user.com)",
+            "Executed.",
+            "db > "
         ])
     end
     

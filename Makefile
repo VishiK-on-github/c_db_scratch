@@ -5,7 +5,7 @@ format: *.c
 	clang-format -style=Google -i *.c
 
 run:
-	./bin/db
+	./bin/db mydb.db
 
 test: db
 	bundle exec rspec
