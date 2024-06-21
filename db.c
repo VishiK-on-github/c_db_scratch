@@ -86,6 +86,36 @@ typedef struct {
   Pager *pager;
 } Table;
 
+// cursor to keep track of which row we are at
+typedef struct {
+  Table *table;
+  uint32_t row_num;
+  bool end_of_table;
+} Cursor;
+
+// this method is used to initialize a cursor 
+// at the 0th row of the table
+Cursor *table_start(Table *table) {
+  Cursor *cursor = malloc(sizeof(Cursor));
+
+  cursor->table = table;
+  cursor->row_num = 0;
+  cursor->end_of_table = (table->num_rows == 0);
+
+  return cursor;
+}
+
+// this method is used to position the cursor to the end of the table
+Cursor *table_end(Table *table) {
+  Cursor *cursor = malloc(sizeof(Cursor));
+
+  cursor->table = table;
+  cursor->row_num = table->num_rows;
+  cursor->end_of_table = true;
+
+  return cursor;
+}
+
 // utility to print row using select statement
 void print_row(Row *row) {
   printf("(%d, %s, %s)\n", row->id, row->username, row->email);
@@ -107,11 +137,10 @@ void deserialize_row(void *source, Row *destination) {
 
 // the logic to retrive contents from the pager.
 // it acts like a cache allocates if we have not found contents
-// for a particular page number otherwise returns contents for 
+// for a particular page number otherwise returns contents for
 // the give cached page number
 void *get_page(Pager *pager, uint32_t page_num) {
-
-  // we check if the page number exceeds 
+  // we check if the page number exceeds
   // the maximum specified pages limit
   if (page_num > TABLE_MAX_PAGES) {
     printf("Tried to fetch page number out of bounds. %d > %d\n", page_num,
@@ -131,13 +160,15 @@ void *get_page(Pager *pager, uint32_t page_num) {
     }
 
     if (page_num <= num_pages) {
-      // used to read a file. we use file descriptor to keep track of which file is opened in the OS
-      // additional docs: https://www.ibm.com/docs/zh-tw/zos/2.4.0?topic=functions-lseek-change-offset-file
-      // i think lseek is used to create a file, second param is used to specify size of the file
-      // and seek set is used to point to the start of the file.
+      // used to read a file. we use file descriptor to keep track of which file
+      // is opened in the OS additional docs:
+      // https://www.ibm.com/docs/zh-tw/zos/2.4.0?topic=functions-lseek-change-offset-file
+      // i think lseek is used to create a file, second param is used to specify
+      // size of the file and seek set is used to point to the start of the
+      // file.
       lseek(pager->file_descriptor, page_num * PAGE_SIZE, SEEK_SET);
-      // since we are now at the start of the file, we will try to read the first
-      // PAGE_SIZE bits to the page object
+      // since we are now at the start of the file, we will try to read the
+      // first PAGE_SIZE bits to the page object
       ssize_t bytes_read = read(pager->file_descriptor, page, PAGE_SIZE);
       if (bytes_read == -1) {
         printf("Error reading the file: %d\n", errno);
@@ -154,20 +185,28 @@ void *get_page(Pager *pager, uint32_t page_num) {
 }
 
 // this method is used to see row fits in which page of the table
-void *row_slot(Table *table, uint32_t row_num) {
+void *cursor_value(Cursor *cursor) {
+  uint32_t row_num = cursor->row_num;
   uint32_t page_num = row_num / ROWS_PER_PAGE;
 
   // for a particular page number
   // we retrive the page from the pager cache
-  void *page = get_page(table->pager, page_num);
+  void *page = get_page(cursor->table->pager, page_num);
   uint32_t row_offset = row_num % ROWS_PER_PAGE;
   uint32_t byte_offset = row_offset * ROW_SIZE;
   return page + byte_offset;
 }
 
+// TODO: add defs later
+void cursor_advance(Cursor *cursor) {
+  cursor->row_num += 1;
+  if (cursor->row_num >= cursor->table->num_rows) {
+    cursor->end_of_table = true;
+  }
+}
+
 // this method reads from the database file where existing writes have occured
 Pager *pager_open(const char *filename) {
-
   // we read the file with specific permissions
   // we get the file descriptor for the read file
   int fd = open(filename,
@@ -184,8 +223,8 @@ Pager *pager_open(const char *filename) {
 
   // we get the length of the file where database entries have been made
   off_t file_length = lseek(fd, 0, SEEK_END);
-  
-  // we allocate a new pager and setup the coressponding file 
+
+  // we allocate a new pager and setup the coressponding file
   // descriptor and length of the pager abstraction / file length
   Pager *pager = malloc(sizeof(Pager));
   pager->file_descriptor = fd;
@@ -201,7 +240,6 @@ Pager *pager_open(const char *filename) {
 
 // this method is used to flush the contents of the page to the database file
 void pager_flush(Pager *pager, uint32_t page_num, uint32_t size) {
-
   // before flushing contents we check if the current page is null
   if (pager->pages[page_num] == NULL) {
     printf("Tried to flush null page\n");
@@ -215,7 +253,7 @@ void pager_flush(Pager *pager, uint32_t page_num, uint32_t size) {
     exit(EXIT_FAILURE);
   }
 
-  // we write the contents of the current page to the 
+  // we write the contents of the current page to the
   // file represented by file descriptor
   ssize_t bytes_written =
       write(pager->file_descriptor, pager->pages[page_num], size);
@@ -228,10 +266,9 @@ void pager_flush(Pager *pager, uint32_t page_num, uint32_t size) {
 
 // this method is used to perform processes before the program exits safely
 void db_close(Table *table) {
-
   Pager *pager = table->pager;
-  // we check how many pages are completely full and then flush these to the disk
-  // after flushing the contents to the disk we free up the page memory
+  // we check how many pages are completely full and then flush these to the
+  // disk after flushing the contents to the disk we free up the page memory
   uint32_t num_full_pages = table->num_rows / ROWS_PER_PAGE;
 
   for (uint32_t i = 0; i < num_full_pages; i++) {
@@ -255,7 +292,7 @@ void db_close(Table *table) {
     }
   }
 
-  // after writing is complete we close the file represented 
+  // after writing is complete we close the file represented
   // by file descriptor to indicate to the OS that the file has been closed
   int result = close(pager->file_descriptor);
   if (result == -1) {
@@ -397,21 +434,32 @@ ExecuteResult execute_insert(Statement *statement, Table *table) {
   }
 
   Row *row_to_insert = &(statement->row_to_insert);
-
-  serialize_row(row_to_insert, row_slot(table, table->num_rows));
+  // we create a cursor to the current last row to insert a new record
+  Cursor *cursor = table_end(table);
+  serialize_row(row_to_insert, cursor_value(cursor));
   table->num_rows += 1;
+
+  free(cursor);
 
   return EXECUTE_SUCCESS;
 }
 
 // this method is used to show all the rows in a table
 ExecuteResult execute_select(Statement *statement, Table *table) {
+  // we initialize the cursor at the start of the table
+  Cursor *cursor = table_start(table);
   Row row;
 
-  for (uint32_t i = 0; i < table->num_rows; i++) {
-    deserialize_row(row_slot(table, i), &row);
+  // we keep incrementing rows unless we have reached the end of the table
+  while (!(cursor->end_of_table)) {
+    deserialize_row(cursor_value(cursor), &row);
     print_row(&row);
+    // after printing the row to console we increment 
+    // the cursor to point to the next row
+    cursor_advance(cursor);
   }
+
+  free(cursor);
 
   return EXECUTE_SUCCESS;
 }
@@ -476,7 +524,7 @@ int main(int argc, char *argv[]) {
         continue;
     }
 
-    // we execute actual queries in the future
+    // we execute actual queries here
     switch (execute_statement(&statement, table)) {
       case EXECUTE_SUCCESS:
         printf("Executed.\n");
