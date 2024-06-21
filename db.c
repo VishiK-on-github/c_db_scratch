@@ -73,7 +73,7 @@ const uint32_t TABLE_MAX_ROWS = ROWS_PER_PAGE * TABLE_MAX_PAGES;
 
 // pager abstraction
 // pager acts as a cache, if it doesnt find the page number,
-// it loads it from the disk
+// it loads it from the disk, also responsible for writing to the disk
 typedef struct {
   int file_descriptor;
   uint32_t file_length;
@@ -105,10 +105,16 @@ void deserialize_row(void *source, Row *destination) {
   memcpy(&(destination->email), source + EMAIL_OFFSET, EMAIL_SIZE);
 }
 
-// the logic to cache pages. TODO: get more indepth info
+// the logic to retrive contents from the pager.
+// it acts like a cache allocates if we have not found contents
+// for a particular page number otherwise returns contents for 
+// the give cached page number
 void *get_page(Pager *pager, uint32_t page_num) {
+
+  // we check if the page number exceeds 
+  // the maximum specified pages limit
   if (page_num > TABLE_MAX_PAGES) {
-    printf("Tried to fetcch page number out of bounds. %d > %d\n", page_num,
+    printf("Tried to fetch page number out of bounds. %d > %d\n", page_num,
            TABLE_MAX_PAGES);
     exit(EXIT_FAILURE);
   }
@@ -119,13 +125,19 @@ void *get_page(Pager *pager, uint32_t page_num) {
     void *page = malloc(PAGE_SIZE);
     uint32_t num_pages = pager->file_length / PAGE_SIZE;
 
-    // TODO: re read what this does
+    // We might save a partial page at the end of the file
     if (pager->file_length % PAGE_SIZE) {
       num_pages += 1;
     }
 
     if (page_num <= num_pages) {
+      // used to read a file. we use file descriptor to keep track of which file is opened in the OS
+      // additional docs: https://www.ibm.com/docs/zh-tw/zos/2.4.0?topic=functions-lseek-change-offset-file
+      // i think lseek is used to create a file, second param is used to specify size of the file
+      // and seek set is used to point to the start of the file.
       lseek(pager->file_descriptor, page_num * PAGE_SIZE, SEEK_SET);
+      // since we are now at the start of the file, we will try to read the first
+      // PAGE_SIZE bits to the page object
       ssize_t bytes_read = read(pager->file_descriptor, page, PAGE_SIZE);
       if (bytes_read == -1) {
         printf("Error reading the file: %d\n", errno);
@@ -133,9 +145,11 @@ void *get_page(Pager *pager, uint32_t page_num) {
       }
     }
 
+    // we store the read bytes into the array of pages
     pager->pages[page_num] = page;
   }
 
+  // we return the specific page
   return pager->pages[page_num];
 }
 
@@ -143,32 +157,41 @@ void *get_page(Pager *pager, uint32_t page_num) {
 void *row_slot(Table *table, uint32_t row_num) {
   uint32_t page_num = row_num / ROWS_PER_PAGE;
 
+  // for a particular page number
+  // we retrive the page from the pager cache
   void *page = get_page(table->pager, page_num);
   uint32_t row_offset = row_num % ROWS_PER_PAGE;
   uint32_t byte_offset = row_offset * ROW_SIZE;
   return page + byte_offset;
 }
 
-// TODO: add info
+// this method reads from the database file where existing writes have occured
 Pager *pager_open(const char *filename) {
+
+  // we read the file with specific permissions
+  // we get the file descriptor for the read file
   int fd = open(filename,
                 O_RDWR |       // read / write mode
                     O_CREAT,   // make new file if it does not exists
                 S_IWUSR |      // write permission
                     S_IRUSR);  // read permission
 
+  // file descriptor is -1 if opening of file has failed for some reason
   if (fd == -1) {
     printf("Unable to open file.\n");
     exit(EXIT_FAILURE);
   }
 
-  // TODO: what does this do ?
+  // we get the length of the file where database entries have been made
   off_t file_length = lseek(fd, 0, SEEK_END);
-
+  
+  // we allocate a new pager and setup the coressponding file 
+  // descriptor and length of the pager abstraction / file length
   Pager *pager = malloc(sizeof(Pager));
   pager->file_descriptor = fd;
   pager->file_length = file_length;
 
+  // we initialize the pages in a pager to be null
   for (uint32_t i = 0; i < TABLE_MAX_PAGES; i++) {
     pager->pages[i] = NULL;
   }
@@ -176,8 +199,10 @@ Pager *pager_open(const char *filename) {
   return pager;
 }
 
-// TODO: add what this does
+// this method is used to flush the contents of the page to the database file
 void pager_flush(Pager *pager, uint32_t page_num, uint32_t size) {
+
+  // before flushing contents we check if the current page is null
   if (pager->pages[page_num] == NULL) {
     printf("Tried to flush null page\n");
     exit(EXIT_FAILURE);
@@ -190,6 +215,8 @@ void pager_flush(Pager *pager, uint32_t page_num, uint32_t size) {
     exit(EXIT_FAILURE);
   }
 
+  // we write the contents of the current page to the 
+  // file represented by file descriptor
   ssize_t bytes_written =
       write(pager->file_descriptor, pager->pages[page_num], size);
 
@@ -199,9 +226,12 @@ void pager_flush(Pager *pager, uint32_t page_num, uint32_t size) {
   }
 }
 
-// TODO: add indepth info regarding this
+// this method is used to perform processes before the program exits safely
 void db_close(Table *table) {
+
   Pager *pager = table->pager;
+  // we check how many pages are completely full and then flush these to the disk
+  // after flushing the contents to the disk we free up the page memory
   uint32_t num_full_pages = table->num_rows / ROWS_PER_PAGE;
 
   for (uint32_t i = 0; i < num_full_pages; i++) {
@@ -213,9 +243,11 @@ void db_close(Table *table) {
     pager->pages[i] = NULL;
   }
 
+  // we now start flushing the pages which are not completely filled up
   uint32_t num_additional_rows = table->num_rows % ROWS_PER_PAGE;
   if (num_additional_rows > 0) {
     uint32_t page_num = num_full_pages;
+    // we continue from the page after all the filled pages
     if (pager->pages[page_num] != NULL) {
       pager_flush(pager, page_num, num_additional_rows * ROW_SIZE);
       free(pager->pages[page_num]);
@@ -223,12 +255,16 @@ void db_close(Table *table) {
     }
   }
 
+  // after writing is complete we close the file represented 
+  // by file descriptor to indicate to the OS that the file has been closed
   int result = close(pager->file_descriptor);
   if (result == -1) {
     printf("Error closing db file.\n");
     exit(EXIT_FAILURE);
   }
 
+  // after flushing contents to the disk we free up all the pages
+  // the pager abstraction and the table object
   for (uint32_t i = 0; i < TABLE_MAX_PAGES; i++) {
     void *page = pager->pages[i];
     if (page) {
