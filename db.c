@@ -36,6 +36,9 @@ typedef enum {
 // defines types for statements, will grow over time
 typedef enum { STATEMENT_INSERT, STATEMENT_SELECT } StatementType;
 
+// defining types for nodes
+typedef enum { NODE_INTERNAL, NODE_LEAF } NodeType;
+
 // constant for schema
 #define COLUMN_USERNAME_SIZE 32
 #define COLUMN_EMAIL_SIZE 255
@@ -52,6 +55,31 @@ typedef struct {
   StatementType type;
   Row row_to_insert;
 } Statement;
+
+// defining constants for node header layout
+const uint32_t NODE_TYPE_SIZE = sizeof(uint8_t);
+const uint32_t NODE_TYPE_OFFSET = 0;
+const uint32_t IS_ROOT_SIZE = sizeof(uint8_t);
+const uint32_t IS_ROOT_OFFSET = NODE_TYPE_SIZE;
+const uint32_t PARENT_POINTER_SIZE = sizeof(uint32_t);
+const uint32_t PARENT_POINTER_OFFSET = IS_ROOT_OFFSET + IS_ROOT_SIZE;
+const uint8_t COMMON_NODE_HEADER_SIZE =
+    NODE_TYPE_SIZE + IS_ROOT_SIZE + PARENT_POINTER_SIZE;
+
+// constants for leaf node layout
+const uint32_t LEAF_NODE_NUM_CELLS_SIZE = sizeof(uint32_t);
+const uint32_t LEAF_NODE_NUM_CELLS_OFFSET = COMMON_NODE_HEADER_SIZE;
+const uint32_t LEAF_NODE_HEADER_SIZE =
+    COMMON_NODE_HEADER_SIZE + LEAF_NODE_NUM_CELLS_SIZE;
+
+// constants for node body layout
+const uint32_t LEAF_NODE_KEY_SIZE = sizeof(uint32_t);
+const uint32_t LEAF_NODE_KEY_OFFSET = 0;
+const uint32_t LEAF_NODE_VALUE_SIZE = ROW_SIZE;
+const uint32_t LEAF_NODE_VALUE_OFFSET = LEAF_NODE_KEY_OFFSET + LEAF_NODE_VALUE_SIZE;
+const uint32_t LEAF_NODE_CELL_SIZE = LEAF_NODE_KEY_SIZE + LEAF_NODE_VALUE_SIZE;
+const uint32_t LEAF_NODE_SPACE_FOR_CELLS = PAGE_SIZE - LEAF_NODE_HEADER_SIZE;
+const uint32_t LEAF_NODE_MAX_CELLS = LEAF_NODE_SPACE_FOR_CELLS / LEAF_NODE_CELL_SIZE;
 
 // representation bits for calculating size
 #define size_of_attribute(Struct, Attribute) sizeof(((Struct *)0)->Attribute)
@@ -93,7 +121,30 @@ typedef struct {
   bool end_of_table;
 } Cursor;
 
-// this method is used to initialize a cursor 
+// TODO: add defs
+uint32_t * leaf_node_num_cells(void * node) {
+  return node + LEAF_NODE_NUM_CELLS_OFFSET;
+}
+
+// TODO: add defs
+void * leaf_node_cell(void * node, uint32_t cell_num) {
+  return node + LEAF_NODE_HEADER_SIZE + cell_num * LEAF_NODE_CELL_SIZE;
+}
+
+// TODO: add defs
+uint32_t * leaf_node_key(void * node, uint32_t cell_num) {
+  return leaf_node_cell(node, cell_num);
+}
+
+// TODO: add defs
+void * leaf_node_value(void * node, uint32_t cell_num) {
+  return leaf_node_cell(node, cell_num) + LEAF_NODE_KEY_SIZE;
+}
+
+// TODO: add defs
+void initialize_leaf_node(void * node) { *leaf_node_num_cells(node) = 0;}
+
+// this method is used to initialize a cursor
 // at the 0th row of the table
 Cursor *table_start(Table *table) {
   Cursor *cursor = malloc(sizeof(Cursor));
@@ -454,7 +505,7 @@ ExecuteResult execute_select(Statement *statement, Table *table) {
   while (!(cursor->end_of_table)) {
     deserialize_row(cursor_value(cursor), &row);
     print_row(&row);
-    // after printing the row to console we increment 
+    // after printing the row to console we increment
     // the cursor to point to the next row
     cursor_advance(cursor);
   }
