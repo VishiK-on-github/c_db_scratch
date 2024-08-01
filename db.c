@@ -56,6 +56,22 @@ typedef struct {
   Row row_to_insert;
 } Statement;
 
+// representation bits for calculating size
+#define size_of_attribute(Struct, Attribute) sizeof(((Struct *)0)->Attribute)
+
+// defining size and offsets of cells in row
+const uint32_t ID_SIZE = size_of_attribute(Row, id);
+const uint32_t USERNAME_SIZE = size_of_attribute(Row, username);
+const uint32_t EMAIL_SIZE = size_of_attribute(Row, email);
+const uint32_t ID_OFFSET = 0;
+const uint32_t USERNAME_OFFSET = ID_OFFSET + ID_SIZE;
+const uint32_t EMAIL_OFFSET = USERNAME_OFFSET + USERNAME_SIZE;
+const uint32_t ROW_SIZE = ID_SIZE + USERNAME_SIZE + EMAIL_SIZE;
+
+// defining page and maximum pages for a table
+const uint32_t PAGE_SIZE = 4096;
+#define TABLE_MAX_PAGES 100
+
 // defining constants for node header layout
 const uint32_t NODE_TYPE_SIZE = sizeof(uint8_t);
 const uint32_t NODE_TYPE_OFFSET = 0;
@@ -76,26 +92,12 @@ const uint32_t LEAF_NODE_HEADER_SIZE =
 const uint32_t LEAF_NODE_KEY_SIZE = sizeof(uint32_t);
 const uint32_t LEAF_NODE_KEY_OFFSET = 0;
 const uint32_t LEAF_NODE_VALUE_SIZE = ROW_SIZE;
-const uint32_t LEAF_NODE_VALUE_OFFSET = LEAF_NODE_KEY_OFFSET + LEAF_NODE_VALUE_SIZE;
+const uint32_t LEAF_NODE_VALUE_OFFSET =
+    LEAF_NODE_KEY_OFFSET + LEAF_NODE_VALUE_SIZE;
 const uint32_t LEAF_NODE_CELL_SIZE = LEAF_NODE_KEY_SIZE + LEAF_NODE_VALUE_SIZE;
 const uint32_t LEAF_NODE_SPACE_FOR_CELLS = PAGE_SIZE - LEAF_NODE_HEADER_SIZE;
-const uint32_t LEAF_NODE_MAX_CELLS = LEAF_NODE_SPACE_FOR_CELLS / LEAF_NODE_CELL_SIZE;
-
-// representation bits for calculating size
-#define size_of_attribute(Struct, Attribute) sizeof(((Struct *)0)->Attribute)
-
-// defining size and offsets of cells in row
-const uint32_t ID_SIZE = size_of_attribute(Row, id);
-const uint32_t USERNAME_SIZE = size_of_attribute(Row, username);
-const uint32_t EMAIL_SIZE = size_of_attribute(Row, email);
-const uint32_t ID_OFFSET = 0;
-const uint32_t USERNAME_OFFSET = ID_OFFSET + ID_SIZE;
-const uint32_t EMAIL_OFFSET = USERNAME_OFFSET + USERNAME_SIZE;
-const uint32_t ROW_SIZE = ID_SIZE + USERNAME_SIZE + EMAIL_SIZE;
-
-// defining page and maximum pages for a table
-const uint32_t PAGE_SIZE = 4096;
-#define TABLE_MAX_PAGES 100
+const uint32_t LEAF_NODE_MAX_CELLS =
+    LEAF_NODE_SPACE_FOR_CELLS / LEAF_NODE_CELL_SIZE;
 
 // pager abstraction
 // pager acts as a cache, if it doesnt find the page number,
@@ -122,60 +124,27 @@ typedef struct {
 } Cursor;
 
 // TODO: add defs
-uint32_t * leaf_node_num_cells(void * node) {
+uint32_t *leaf_node_num_cells(void *node) {
   return node + LEAF_NODE_NUM_CELLS_OFFSET;
 }
 
 // TODO: add defs
-void * leaf_node_cell(void * node, uint32_t cell_num) {
+void *leaf_node_cell(void *node, uint32_t cell_num) {
   return node + LEAF_NODE_HEADER_SIZE + cell_num * LEAF_NODE_CELL_SIZE;
 }
 
 // TODO: add defs
-uint32_t * leaf_node_key(void * node, uint32_t cell_num) {
+uint32_t *leaf_node_key(void *node, uint32_t cell_num) {
   return leaf_node_cell(node, cell_num);
 }
 
 // TODO: add defs
-void * leaf_node_value(void * node, uint32_t cell_num) {
+void *leaf_node_value(void *node, uint32_t cell_num) {
   return leaf_node_cell(node, cell_num) + LEAF_NODE_KEY_SIZE;
 }
 
 // this method is used to initialize a node
-void initialize_leaf_node(void * node) { *leaf_node_num_cells(node) = 0;}
-
-// this method is used to initialize a cursor
-// at the 0th row of the table
-Cursor *table_start(Table *table) {
-  Cursor *cursor = malloc(sizeof(Cursor));
-
-  cursor->table = table;
-  // cursor->row_num = 0;
-  // cursor->end_of_table = (table->num_rows == 0);
-  cursor->page_num = table->root_page_num;
-  cursor->cell_num = 0;
-
-  void * root_node = get_page(table->pager, table->root_page_num);
-  uint32_t num_cells = *leaf_node_num_cells(root_node);
-  cursor->end_of_table = (num_cells == 0);
-
-  return cursor;
-}
-
-// this method is used to position the cursor to the end of the table
-Cursor *table_end(Table *table) {
-  Cursor *cursor = malloc(sizeof(Cursor));
-
-  cursor->table = table;
-  cursor->page_num = table->root_page_num;
-
-  void * root_node = get_page(table->pager, table->root_page_num);
-  uint32_t num_cells = *leaf_node_num_cells(root_node);
-  cursor->cell_num = num_cells;
-  cursor->end_of_table = true;
-
-  return cursor;
-}
+void initialize_leaf_node(void *node) { *leaf_node_num_cells(node) = 0; }
 
 // utility to print row using select statement
 void print_row(Row *row) {
@@ -251,9 +220,41 @@ void *get_page(Pager *pager, uint32_t page_num) {
   return pager->pages[page_num];
 }
 
+// this method is used to initialize a cursor
+// at the 0th row of the table
+Cursor *table_start(Table *table) {
+  Cursor *cursor = malloc(sizeof(Cursor));
+
+  cursor->table = table;
+  // cursor->row_num = 0;
+  // cursor->end_of_table = (table->num_rows == 0);
+  cursor->page_num = table->root_page_num;
+  cursor->cell_num = 0;
+
+  void *root_node = get_page(table->pager, table->root_page_num);
+  uint32_t num_cells = *leaf_node_num_cells(root_node);
+  cursor->end_of_table = (num_cells == 0);
+
+  return cursor;
+}
+
+// this method is used to position the cursor to the end of the table
+Cursor *table_end(Table *table) {
+  Cursor *cursor = malloc(sizeof(Cursor));
+
+  cursor->table = table;
+  cursor->page_num = table->root_page_num;
+
+  void *root_node = get_page(table->pager, table->root_page_num);
+  uint32_t num_cells = *leaf_node_num_cells(root_node);
+  cursor->cell_num = num_cells;
+  cursor->end_of_table = true;
+
+  return cursor;
+}
+
 // this method is used to see row fits in which page of the table
 void *cursor_value(Cursor *cursor) {
-
   // for a particular page number
   // we retrive the page from the pager cache
   uint32_t page_num = cursor->page_num;
@@ -265,7 +266,7 @@ void *cursor_value(Cursor *cursor) {
 // incrementing the cursor to the next row / cell
 void cursor_advance(Cursor *cursor) {
   uint32_t page_num = cursor->page_num;
-  void * node = get_page(cursor->table->pager, page_num);
+  void *node = get_page(cursor->table->pager, page_num);
 
   cursor->cell_num += 1;
   if (cursor->cell_num >= (*leaf_node_num_cells(node))) {
@@ -387,7 +388,7 @@ Table *db_open(const char *filename) {
 
   // create a new node from scratch and new db file
   if (pager->num_pages == 0) {
-    void * root_node = get_page(pager, 0);
+    void *root_node = get_page(pager, 0);
     initialize_leaf_node(root_node);
   }
 
@@ -395,8 +396,8 @@ Table *db_open(const char *filename) {
 }
 
 // TODO: add defs
-void leaf_node_insert(Cursor * cursor, uint32_t key, Row * value) {
-  void * node = get_page(cursor->table->pager, cursor->page_num);
+void leaf_node_insert(Cursor *cursor, uint32_t key, Row *value) {
+  void *node = get_page(cursor->table->pager, cursor->page_num);
 
   uint32_t num_cells = *leaf_node_num_cells(node);
   if (num_cells >= LEAF_NODE_MAX_CELLS) {
@@ -407,7 +408,8 @@ void leaf_node_insert(Cursor * cursor, uint32_t key, Row * value) {
   if (cursor->cell_num < num_cells) {
     // to make space for new cell
     for (uint32_t i = num_cells; i > cursor->cell_num; i--) {
-      memcpy(leaf_node_cell(node, i), leaf_node_cell(node, i-1), LEAF_NODE_CELL_SIZE);
+      memcpy(leaf_node_cell(node, i), leaf_node_cell(node, i - 1),
+             LEAF_NODE_CELL_SIZE);
     }
   }
 
@@ -459,6 +461,17 @@ void read_input(InputBuffer *input_buffer) {
   // ignoring the trailing newline
   input_buffer->input_length = bytes_read - 1;
   input_buffer->buffer[bytes_read - 1] = 0;
+}
+
+// this method is a meta command to print of some node and row
+// related constants
+void print_constants() {
+  printf("ROW_SIZE: %d\n", ROW_SIZE);
+  printf("COMMON_NODE_HEADER_SIZE: %d\n", COMMON_NODE_HEADER_SIZE);
+  printf("LEAF_NODE_HEADER_SIZE: %d\n", LEAF_NODE_HEADER_SIZE);
+  printf("LEAF_NODE_CELL_SIZE: %d\n", LEAF_NODE_CELL_SIZE);
+  printf("LEAF_NODE_SPACE_FOR_CELLS: %d\n", LEAF_NODE_SPACE_FOR_CELLS);
+  printf("LEAF_NODE_MAX_CELLS: %d\n", LEAF_NODE_MAX_CELLS);
 }
 
 // this method is used to process meta commands
@@ -523,7 +536,7 @@ PrepareResult prepare_statement(InputBuffer *input_buffer,
 
 // this method is used to insert rows into table
 ExecuteResult execute_insert(Statement *statement, Table *table) {
-  void * node = get_page(table->pager, table->root_page_num);
+  void *node = get_page(table->pager, table->root_page_num);
   if ((*leaf_node_num_cells(node) >= LEAF_NODE_MAX_CELLS)) {
     return EXECUTE_TABLE_FULL;
   }
@@ -557,17 +570,6 @@ ExecuteResult execute_select(Statement *statement, Table *table) {
   free(cursor);
 
   return EXECUTE_SUCCESS;
-}
-
-// this method is a meta command to print of some node and row
-// related constants
-void print_constants() {
-  printf("ROW_SIZE: %d\n", ROW_SIZE);
-  printf("COMMON_NODE_HEADER_SIZE: %d\n", COMMON_NODE_HEADER_SIZE);
-  printf("LEAF_NODE_HEADER_SIZE: %d\n", LEAF_NODE_HEADER_SIZE);
-  printf("LEAF_NODE_CELL_SIZE: %d\n", LEAF_NODE_CELL_SIZE);
-  printf("LEAF_NODE_SPACE_FOR_CELLS: %d\n", LEAF_NODE_SPACE_FOR_CELLS);
-  printf("LEAF_NODE_MAX_CELLS: %d\n", LEAF_NODE_MAX_CELLS);
 }
 
 // we execute actual SQL statements here
