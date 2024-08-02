@@ -46,8 +46,8 @@ typedef enum { NODE_INTERNAL, NODE_LEAF } NodeType;
 // fixed row schema
 typedef struct {
   uint32_t id;
-  char username[COLUMN_USERNAME_SIZE];
-  char email[COLUMN_EMAIL_SIZE];
+  char username[COLUMN_USERNAME_SIZE + 1];
+  char email[COLUMN_EMAIL_SIZE + 1];
 } Row;
 
 // creating a statement dict to keep track of types
@@ -123,22 +123,22 @@ typedef struct {
   bool end_of_table;
 } Cursor;
 
-// TODO: add defs
+// pointer to location after reeserving for headers
 uint32_t *leaf_node_num_cells(void *node) {
   return node + LEAF_NODE_NUM_CELLS_OFFSET;
 }
 
-// TODO: add defs
+// returns a pointer to the particular cell
 void *leaf_node_cell(void *node, uint32_t cell_num) {
   return node + LEAF_NODE_HEADER_SIZE + cell_num * LEAF_NODE_CELL_SIZE;
 }
 
-// TODO: add defs
+// returns pointer to the key
 uint32_t *leaf_node_key(void *node, uint32_t cell_num) {
   return leaf_node_cell(node, cell_num);
 }
 
-// TODO: add defs
+// return pointer to the value / location fo memory where row is serialised
 void *leaf_node_value(void *node, uint32_t cell_num) {
   return leaf_node_cell(node, cell_num) + LEAF_NODE_KEY_SIZE;
 }
@@ -395,16 +395,20 @@ Table *db_open(const char *filename) {
   return table;
 }
 
-// TODO: add defs
+// this method is used to insert a row into the database
 void leaf_node_insert(Cursor *cursor, uint32_t key, Row *value) {
+  // we get the page that the cursor is pointing to
   void *node = get_page(cursor->table->pager, cursor->page_num);
 
+  // we check if the number of cells is greater than
+  // the max limit if yes we split the rows across leaf nodes
   uint32_t num_cells = *leaf_node_num_cells(node);
   if (num_cells >= LEAF_NODE_MAX_CELLS) {
     printf("Need to split a leaf node !\n");
     exit(EXIT_FAILURE);
   }
 
+  // moving cells to make space for inserting new cell
   if (cursor->cell_num < num_cells) {
     // to make space for new cell
     for (uint32_t i = num_cells; i > cursor->cell_num; i--) {
@@ -413,8 +417,10 @@ void leaf_node_insert(Cursor *cursor, uint32_t key, Row *value) {
     }
   }
 
+  // after insertion increment the num cells for the node
   *(leaf_node_num_cells(node)) += 1;
   *(leaf_node_key(node, cursor->cell_num)) = key;
+  // store the value / row in the newly created space
   serialize_row(value, leaf_node_value(node, cursor->cell_num));
 }
 
@@ -474,14 +480,28 @@ void print_constants() {
   printf("LEAF_NODE_MAX_CELLS: %d\n", LEAF_NODE_MAX_CELLS);
 }
 
+// this method is used to print the leaf nodes
+void print_leaf_node(void * node) {
+  uint32_t num_cells = *leaf_node_num_cells(node);
+  printf("leaf (size %d)\n", num_cells);
+  for (uint32_t i = 0; i < num_cells; i++) {
+    uint32_t key = *leaf_node_key(node, i);
+    printf("  - %d : %d\n", i, key);
+  }
+}
+
 // this method is used to process meta commands
 MetaCommandResult do_meta_command(InputBuffer *input_buffer, Table *table) {
   if (strcmp(input_buffer->buffer, ".exit") == 0) {
     close_input_buffer(input_buffer);
     db_close(table);
     exit(EXIT_SUCCESS);
+  } else if (strcmp(input_buffer->buffer, ".btree") == 0) {
+    printf("Tree:\n");
+    print_leaf_node(get_page(table->pager, 0));
+    return META_COMMAND_SUCCESS;
   } else if (strcmp(input_buffer->buffer, ".constants") == 0) {
-    printf("Constants: \n");
+    printf("Constants:\n");
     print_constants();
     return META_COMMAND_SUCCESS;
   } else {
